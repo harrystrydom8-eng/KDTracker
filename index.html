@@ -1,0 +1,1511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>KD Tracker — Warzone &amp; Multiplayer</title>
+  <meta name="description" content="Log your Call of Duty matches and track your KD across Warzone and Multiplayer.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Saira+Condensed:wght@500;700;800&display=swap" rel="stylesheet">
+  <style>
+/* ---------- Tokens ---------- */
+:root {
+  --bg: #1a1f24;
+  --panel: #232a31;
+  --panel-2: #2b333b;
+  --line: #36424c;
+  --ink: #e7e3d8;
+  --muted: #9aa4ad;
+  --wz: #e3a33b;      /* Warzone: amber, like the gas circle */
+  --mp: #5ba7d6;      /* Multiplayer: steel blue */
+  --good: #8cc58a;
+  --bad: #e2725f;
+  --focus: #f4f0e4;
+
+  --font-display: "Saira Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+
+  --radius-lg: 14px;
+  --radius-sm: 6px;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #e8ebe7;
+    --panel: #f7f8f5;
+    --panel-2: #eef0ec;
+    --line: #c8cfca;
+    --ink: #1a1f24;
+    --muted: #57626b;
+    --wz: #a5650c;
+    --mp: #1e6a9b;
+    --good: #2f7d32;
+    --bad: #b6402c;
+    --focus: #1a1f24;
+    color-scheme: light;
+  }
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.5;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+}
+
+h1, h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  margin: 0;
+}
+
+h2 { font-size: 1.35rem; }
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+main {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 1.25rem 3rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+/* Grid children must be allowed to shrink so wide tables scroll inside .table-wrap */
+main > *, .split > *, .scoreboard > * { min-width: 0; }
+
+/* ---------- Top bar ---------- */
+.topbar {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand { font-size: 2rem; font-weight: 800; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+
+.segmented {
+  display: inline-flex;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px;
+}
+
+.segmented button {
+  font: 500 0.95rem var(--font-body);
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+.segmented button[aria-checked="true"] { background: var(--panel-2); color: var(--ink); }
+.segmented button[data-mode="warzone"][aria-checked="true"] { box-shadow: inset 0 -2px 0 var(--wz); }
+.segmented button[data-mode="multiplayer"][aria-checked="true"] { box-shadow: inset 0 -2px 0 var(--mp); }
+
+select, input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.6rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.controls select { width: auto; background: var(--panel); }
+
+/* ---------- Scoreboard ---------- */
+.scoreboard {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+.mode-card {
+  --accent: var(--wz);
+  position: relative;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem 1.5rem;
+  border-top: 4px solid var(--accent);
+  transition: opacity 200ms ease;
+}
+
+.mode-card[data-mode-card="multiplayer"] { --accent: var(--mp); }
+.mode-card.dimmed { opacity: 0.45; }
+.mode-card h2 { color: var(--accent); font-size: 1.5rem; }
+
+.kd-figure {
+  margin: 0.25rem 0 0.75rem;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(4.5rem, 12vw, 7.5rem);
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.kd-figure small {
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* Kill share bar: filled part = kills / (kills + deaths). Half-way mark = 1.00 KD */
+.kd-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bad) 45%, var(--panel-2));
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.kd-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 400ms ease;
+}
+
+.kd-bar::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--bg);
+}
+
+.mini-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.mini-stats dt { font-size: 0.8rem; color: var(--muted); }
+.mini-stats dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-up { color: var(--good); }
+.trend-down { color: var(--bad); }
+
+.combined {
+  grid-column: 1 / -1;
+  margin: -0.25rem 0 0;
+  color: var(--muted);
+}
+
+/* ---------- Panels ---------- */
+.panel {
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.panel > h2, .panel-head { margin-bottom: 1rem; }
+
+.panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.count { color: var(--muted); font-size: 0.95rem; }
+
+/* ---------- Chart ---------- */
+.chart { width: 100%; min-height: 240px; }
+.chart svg { display: block; width: 100%; height: 260px; }
+.chart .axis text { fill: var(--muted); font: 12px var(--font-body); }
+.chart .grid line { stroke: var(--line); stroke-width: 1; }
+.chart .line-wz { stroke: var(--wz); }
+.chart .line-mp { stroke: var(--mp); }
+.chart .goal { stroke: var(--ink); stroke-dasharray: 5 5; opacity: 0.6; }
+.chart .empty-chart { fill: var(--muted); font: 15px var(--font-body); }
+
+.goal-label { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.95rem; }
+.goal-label input { width: 5.5rem; }
+
+.legend {
+  list-style: none;
+  display: flex;
+  gap: 1.25rem;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.legend li::before {
+  content: "";
+  display: inline-block;
+  width: 18px; height: 3px;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+.legend-wz::before { background: var(--wz); }
+.legend-mp::before { background: var(--mp); }
+.legend-goal::before { background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 10px); opacity: 0.6; }
+
+/* ---------- Form ---------- */
+.split {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+form { display: grid; gap: 0.9rem; }
+
+form label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.field-row.three { grid-template-columns: repeat(3, 1fr); }
+.field-row [hidden] { display: none; }
+
+.mode-pick {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.mode-pick legend { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.3rem; padding: 0; }
+
+.mode-pick label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink);
+  font-size: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+}
+
+.mode-pick input { width: auto; accent-color: var(--ink); }
+.mode-pick label:has(input[value="warzone"]:checked) { border-color: var(--wz); box-shadow: inset 0 0 0 1px var(--wz); }
+.mode-pick label:has(input[value="multiplayer"]:checked) { border-color: var(--mp); box-shadow: inset 0 0 0 1px var(--mp); }
+
+.live-kd { margin: 0; color: var(--muted); }
+.live-kd strong {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.35rem;
+}
+
+.form-errors { margin: 0; color: var(--bad); min-height: 0; }
+.form-errors:empty { display: none; }
+
+.form-actions, .data-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+
+.btn {
+  font: 600 0.95rem var(--font-body);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 1.1rem;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+}
+
+.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); }
+.btn:hover { filter: brightness(1.1); }
+
+.file-btn { position: relative; display: inline-flex; align-items: center; }
+.file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.file-btn:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ---------- Highlights ---------- */
+.highlights { margin: 0; display: grid; gap: 1rem; }
+.highlights > div { border-left: 3px solid var(--line); padding-left: 0.85rem; }
+.highlights dt { font-size: 0.9rem; color: var(--muted); }
+.highlights dd { margin: 0.1rem 0 0; }
+.highlights .big {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.7rem;
+  font-variant-numeric: tabular-nums;
+}
+.highlights .sub { color: var(--muted); font-size: 0.9rem; }
+
+/* ---------- History table ---------- */
+.table-wrap { overflow-x: auto; position: relative; }
+
+.history {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+}
+
+.history th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.history td {
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  white-space: nowrap;
+}
+
+.history .num { text-align: right; }
+.history td.kd { font-weight: 600; }
+.history td.kd.pos { color: var(--good); }
+.history td.kd.neg { color: var(--bad); }
+
+.mode-tag { display: inline-flex; align-items: center; gap: 0.4rem; }
+.mode-tag::before {
+  content: "";
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--wz);
+}
+.mode-tag.mp::before { background: var(--mp); }
+
+.row-actions { display: flex; gap: 0.25rem; justify-content: flex-end; }
+.row-actions button {
+  font: 500 0.85rem var(--font-body);
+  background: none;
+  border: 0;
+  color: var(--muted);
+  padding: 0.25rem 0.45rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.row-actions button:hover { color: var(--ink); background: var(--panel-2); }
+
+.empty { text-align: center; padding: 1.5rem 1rem 0.5rem; color: var(--muted); }
+.empty p { max-width: 46ch; margin: 0 auto 1rem; }
+
+.show-more { margin-top: 1rem; }
+
+/* ---------- Data + footer ---------- */
+.data-panel p { color: var(--muted); max-width: 70ch; margin: 0 0 1rem; }
+.import-status { margin-top: 0.75rem !important; }
+.import-status:empty { display: none; }
+
+.footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0 1.25rem 2rem;
+}
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  transform: translate(-50%, 1rem);
+  background: var(--ink);
+  color: var(--bg);
+  padding: 0.6rem 1.1rem;
+  border-radius: 999px;
+  font-weight: 600;
+  max-width: calc(100vw - 2rem);
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 860px) {
+  .split { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .scoreboard { grid-template-columns: 1fr; }
+  .mini-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .field-row { grid-template-columns: 1fr; }
+  .field-row.three { grid-template-columns: repeat(3, 1fr); }
+  .panel, .mode-card { padding: 1rem 1.1rem 1.25rem; }
+  .brand { font-size: 1.7rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; }
+}
+
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand">KD Tracker</h1>
+    <div class="controls" role="group" aria-label="Filters">
+      <div class="segmented" role="radiogroup" aria-label="Mode">
+        <button type="button" role="radio" data-mode="all" aria-checked="true">All</button>
+        <button type="button" role="radio" data-mode="warzone" aria-checked="false">Warzone</button>
+        <button type="button" role="radio" data-mode="multiplayer" aria-checked="false">Multiplayer</button>
+      </div>
+      <label class="select-label">
+        <span class="visually-hidden">Time range</span>
+        <select id="range">
+          <option value="1">Today</option>
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="" selected>All time</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <main>
+    <!-- Scoreboard: one half per mode -->
+    <section class="scoreboard" aria-label="KD by mode">
+      <article class="mode-card" data-mode-card="warzone">
+        <h2>Warzone</h2>
+        <p class="kd-figure"><span data-stat="kd">0.00</span><small>KD</small></p>
+        <div class="kd-bar" aria-hidden="true"><span data-stat="bar"></span></div>
+        <dl class="mini-stats">
+          <div><dt>Kills</dt><dd data-stat="kills">0</dd></div>
+          <div><dt>Deaths</dt><dd data-stat="deaths">0</dd></div>
+          <div><dt>Matches</dt><dd data-stat="matches">0</dd></div>
+          <div><dt>Wins</dt><dd data-stat="winRate">0%</dd></div>
+          <div><dt>Last 10 KD</dt><dd data-stat="last10">0.00</dd></div>
+        </dl>
+      </article>
+      <article class="mode-card" data-mode-card="multiplayer">
+        <h2>Multiplayer</h2>
+        <p class="kd-figure"><span data-stat="kd">0.00</span><small>KD</small></p>
+        <div class="kd-bar" aria-hidden="true"><span data-stat="bar"></span></div>
+        <dl class="mini-stats">
+          <div><dt>Kills</dt><dd data-stat="kills">0</dd></div>
+          <div><dt>Deaths</dt><dd data-stat="deaths">0</dd></div>
+          <div><dt>Matches</dt><dd data-stat="matches">0</dd></div>
+          <div><dt>Wins</dt><dd data-stat="winRate">0%</dd></div>
+          <div><dt>Last 10 KD</dt><dd data-stat="last10">0.00</dd></div>
+        </dl>
+      </article>
+      <p class="combined" id="combined">Combined KD 0.00 across 0 matches</p>
+    </section>
+
+    <!-- Trend chart -->
+    <section class="panel chart-panel" aria-labelledby="trend-title">
+      <div class="panel-head">
+        <h2 id="trend-title">KD over time</h2>
+        <label class="goal-label">Goal KD
+          <input id="goal" type="number" min="0" max="20" step="0.05" inputmode="decimal">
+        </label>
+      </div>
+      <div id="chart" class="chart" role="img" aria-label="Cumulative KD per mode over time"></div>
+      <ul class="legend">
+        <li class="legend-wz">Warzone</li>
+        <li class="legend-mp">Multiplayer</li>
+        <li class="legend-goal">Goal</li>
+      </ul>
+    </section>
+
+    <div class="split">
+      <!-- Log a match -->
+      <section class="panel" aria-labelledby="log-title">
+        <h2 id="log-title">Log a match</h2>
+        <form id="match-form" novalidate>
+          <input type="hidden" name="id">
+          <fieldset class="mode-pick">
+            <legend>Mode</legend>
+            <label><input type="radio" name="mode" value="warzone" checked> Warzone</label>
+            <label><input type="radio" name="mode" value="multiplayer"> Multiplayer</label>
+          </fieldset>
+
+          <div class="field-row">
+            <label>Playlist
+              <select name="playlist"></select>
+            </label>
+            <label>Map
+              <input name="map" type="text" maxlength="60" placeholder="e.g. Verdansk" autocomplete="off">
+            </label>
+          </div>
+
+          <div class="field-row three">
+            <label>Kills
+              <input name="kills" type="number" min="0" max="999" inputmode="numeric" required>
+            </label>
+            <label>Deaths
+              <input name="deaths" type="number" min="0" max="999" inputmode="numeric" required>
+            </label>
+            <label>Assists
+              <input name="assists" type="number" min="0" max="999" inputmode="numeric">
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label data-for-mode="warzone">Placement
+              <input name="placement" type="number" min="1" max="150" inputmode="numeric" placeholder="1 = win">
+            </label>
+            <label data-for-mode="multiplayer" hidden>Result
+              <select name="result">
+                <option value="">Not recorded</option>
+                <option value="win">Win</option>
+                <option value="loss">Loss</option>
+                <option value="draw">Draw</option>
+              </select>
+            </label>
+            <label>Date and time
+              <input name="date" type="datetime-local">
+            </label>
+          </div>
+
+          <label>Notes
+            <input name="notes" type="text" maxlength="280" placeholder="Loadout, squad, anything worth remembering" autocomplete="off">
+          </label>
+
+          <p class="live-kd" aria-live="polite">Match KD <strong id="live-kd">—</strong></p>
+          <p class="form-errors" id="form-errors" role="alert"></p>
+
+          <div class="form-actions">
+            <button type="submit" class="btn primary" id="save-btn">Save match</button>
+            <button type="button" class="btn ghost" id="cancel-edit" hidden>Cancel edit</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Highlights -->
+      <section class="panel" aria-labelledby="hl-title">
+        <h2 id="hl-title">Highlights</h2>
+        <dl class="highlights" id="highlights"></dl>
+      </section>
+    </div>
+
+    <!-- History -->
+    <section class="panel" aria-labelledby="history-title">
+      <div class="panel-head">
+        <h2 id="history-title">Match history</h2>
+        <span class="count" id="history-count"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="history">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Mode</th>
+              <th scope="col">Playlist</th>
+              <th scope="col">Map</th>
+              <th scope="col" class="num">K</th>
+              <th scope="col" class="num">D</th>
+              <th scope="col" class="num">A</th>
+              <th scope="col" class="num">KD</th>
+              <th scope="col">Result</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="empty-state" hidden>
+        <p>No matches in this view yet. Log your first match above, or load sample data to see how the tracker looks.</p>
+        <button type="button" class="btn ghost" id="load-sample">Load sample matches</button>
+      </div>
+    </section>
+
+    <!-- Data -->
+    <section class="panel data-panel" aria-labelledby="data-title">
+      <h2 id="data-title">Your data</h2>
+      <p>Matches are saved in this browser only. Export a backup before clearing your browser data or switching devices.</p>
+      <div class="data-actions">
+        <button type="button" class="btn ghost" id="export-csv">Export CSV</button>
+        <button type="button" class="btn ghost" id="export-json">Export JSON</button>
+        <label class="btn ghost file-btn">Import CSV or JSON
+          <input type="file" id="import-file" accept=".csv,.json,text/csv,application/json">
+        </label>
+        <button type="button" class="btn danger" id="clear-all">Delete all matches</button>
+      </div>
+      <p class="import-status" id="import-status" role="status"></p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Fan-made tool, not affiliated with Activision. Call of Duty and Warzone are trademarks of their owners.</p>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+/**
+ * stats.js — pure functions for KD math, filtering, and CSV import/export.
+ * No DOM access here, so it runs in the browser (window.KDStats)
+ * and in Node for tests (module.exports).
+ */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = api;
+  } else {
+    root.KDStats = api;
+  }
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  const MODES = {
+    warzone: {
+      label: "Warzone",
+      playlists: ["Battle Royale Solos", "Battle Royale Duos", "Battle Royale Trios", "Battle Royale Quads", "Resurgence", "Plunder", "Other"],
+    },
+    multiplayer: {
+      label: "Multiplayer",
+      playlists: ["Team Deathmatch", "Domination", "Hardpoint", "Search & Destroy", "Kill Confirmed", "Control", "Free-for-All", "Ground War", "Other"],
+    },
+  };
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  /** KD ratio. With zero deaths, KD equals kills (the in-game convention). */
+  function kd(kills, deaths) {
+    const k = Number(kills) || 0;
+    const d = Number(deaths) || 0;
+    return d === 0 ? k : k / d;
+  }
+
+  function formatKD(value) {
+    return Number.isFinite(value) ? value.toFixed(2) : "0.00";
+  }
+
+  /** A Warzone match is a win at 1st place; a Multiplayer match when result is "win". */
+  function isWin(match) {
+    if (match.mode === "warzone") return Number(match.placement) === 1;
+    return match.result === "win";
+  }
+
+  function sortByDate(matches) {
+    return [...matches].sort((a, b) => new Date(a.date) - new Date(b.date));
+  }
+
+  /**
+   * filterMatches(matches, { mode: "all"|"warzone"|"multiplayer", days: number|null, now: Date })
+   */
+  function filterMatches(matches, opts = {}) {
+    const mode = opts.mode || "all";
+    const now = opts.now ? new Date(opts.now).getTime() : Date.now();
+    const cutoff = opts.days ? now - opts.days * DAY_MS : null;
+    return matches.filter((m) => {
+      if (mode !== "all" && m.mode !== mode) return false;
+      if (cutoff !== null && new Date(m.date).getTime() < cutoff) return false;
+      return true;
+    });
+  }
+
+  function summarize(matches) {
+    const sorted = sortByDate(matches);
+    let kills = 0, deaths = 0, assists = 0, wins = 0;
+    let best = null;
+
+    for (const m of sorted) {
+      kills += Number(m.kills) || 0;
+      deaths += Number(m.deaths) || 0;
+      assists += Number(m.assists) || 0;
+      if (isWin(m)) wins++;
+      if (!best || m.kills > best.kills || (m.kills === best.kills && kd(m.kills, m.deaths) > kd(best.kills, best.deaths))) {
+        best = m;
+      }
+    }
+
+    const last10 = sorted.slice(-10);
+    const last10Kills = last10.reduce((s, m) => s + (Number(m.kills) || 0), 0);
+    const last10Deaths = last10.reduce((s, m) => s + (Number(m.deaths) || 0), 0);
+
+    return {
+      matches: sorted.length,
+      kills,
+      deaths,
+      assists,
+      kd: kd(kills, deaths),
+      wins,
+      winRate: sorted.length ? wins / sorted.length : 0,
+      avgKills: sorted.length ? kills / sorted.length : 0,
+      bestMatch: best,
+      last10KD: kd(last10Kills, last10Deaths),
+      positiveStreak: positiveStreak(sorted),
+    };
+  }
+
+  /** Count of most recent consecutive matches with KD >= 1. Expects date-sorted input. */
+  function positiveStreak(sortedMatches) {
+    let streak = 0;
+    for (let i = sortedMatches.length - 1; i >= 0; i--) {
+      const m = sortedMatches[i];
+      if (kd(m.kills, m.deaths) >= 1) streak++;
+      else break;
+    }
+    return streak;
+  }
+
+  /** Cumulative KD after each match, in date order: [{ date, kd, match }] */
+  function cumulativeKD(matches) {
+    let k = 0, d = 0;
+    return sortByDate(matches).map((m) => {
+      k += Number(m.kills) || 0;
+      d += Number(m.deaths) || 0;
+      return { date: m.date, kd: kd(k, d), match: m };
+    });
+  }
+
+  function intField(value, name, errors, { min = 0, max = 999, required = true } = {}) {
+    if (value === "" || value === null || value === undefined) {
+      if (required) errors.push(`${name} is required.`);
+      return null;
+    }
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < min || n > max) {
+      errors.push(`${name} must be a whole number from ${min} to ${max}.`);
+      return null;
+    }
+    return n;
+  }
+
+  /** Validate raw form/CSV input and return a clean match object. */
+  function validateMatch(input) {
+    const errors = [];
+    const mode = input.mode;
+    if (!MODES[mode]) errors.push("Mode must be Warzone or Multiplayer.");
+
+    const kills = intField(input.kills, "Kills", errors);
+    const deaths = intField(input.deaths, "Deaths", errors);
+    const assists = intField(input.assists, "Assists", errors, { required: false });
+
+    const date = input.date ? new Date(input.date) : new Date();
+    if (Number.isNaN(date.getTime())) errors.push("Date is not valid.");
+
+    const match = {
+      id: input.id || makeId(),
+      mode,
+      playlist: String(input.playlist || "Other").slice(0, 60),
+      map: String(input.map || "").trim().slice(0, 60),
+      kills: kills ?? 0,
+      deaths: deaths ?? 0,
+      assists: assists ?? 0,
+      date: Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString(),
+      notes: String(input.notes || "").trim().slice(0, 280),
+    };
+
+    if (mode === "warzone") {
+      const placement = intField(input.placement, "Placement", errors, { min: 1, max: 150, required: false });
+      match.placement = placement;
+    } else if (mode === "multiplayer") {
+      const result = input.result || "";
+      if (result && !["win", "loss", "draw"].includes(result)) errors.push("Result must be win, loss, or draw.");
+      match.result = result || null;
+    }
+
+    return { ok: errors.length === 0, errors, match };
+  }
+
+  function makeId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  /* ---------- CSV ---------- */
+
+  const CSV_COLUMNS = ["date", "mode", "playlist", "map", "kills", "deaths", "assists", "placement", "result", "notes"];
+
+  function csvEscape(value) {
+    const s = value === null || value === undefined ? "" : String(value);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+
+  function toCSV(matches) {
+    const rows = sortByDate(matches).map((m) => CSV_COLUMNS.map((c) => csvEscape(m[c])).join(","));
+    return [CSV_COLUMNS.join(","), ...rows].join("\n");
+  }
+
+  /** Minimal RFC 4180 parser: handles quoted fields, escaped quotes, and newlines in quotes. */
+  function parseCSV(text) {
+    const rows = [];
+    let row = [], field = "", inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQuotes) {
+        if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+        else if (c === '"') inQuotes = false;
+        else field += c;
+      } else if (c === '"') inQuotes = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(field); rows.push(row); row = []; field = "";
+      } else field += c;
+    }
+    if (field !== "" || row.length) { row.push(field); rows.push(row); }
+    return rows.filter((r) => r.some((cell) => cell.trim() !== ""));
+  }
+
+  /** Returns { matches, errors } where errors are "Row N: message" strings. */
+  function fromCSV(text) {
+    const rows = parseCSV(text);
+    if (!rows.length) return { matches: [], errors: ["The file is empty."] };
+    const header = rows[0].map((h) => h.trim().toLowerCase());
+    const matches = [], errors = [];
+    rows.slice(1).forEach((cells, i) => {
+      const raw = {};
+      header.forEach((h, idx) => { raw[h] = (cells[idx] ?? "").trim(); });
+      raw.mode = raw.mode.toLowerCase();
+      raw.result = (raw.result || "").toLowerCase();
+      const { ok, errors: rowErrors, match } = validateMatch(raw);
+      if (ok) matches.push(match);
+      else errors.push(`Row ${i + 2}: ${rowErrors.join(" ")}`);
+    });
+    return { matches, errors };
+  }
+
+  return {
+    MODES, kd, formatKD, isWin, sortByDate, filterMatches, summarize,
+    positiveStreak, cumulativeKD, validateMatch, toCSV, parseCSV, fromCSV,
+  };
+});
+
+</script>
+  <script>
+/* app.js — UI wiring for the KD tracker. Depends on js/stats.js (window.KDStats). */
+(function () {
+  "use strict";
+
+  const S = window.KDStats;
+  const STORAGE_KEY = "cod-kd-tracker:v1";
+  const HISTORY_PAGE = 25;
+
+  const state = {
+    matches: [],
+    goal: 1.0,
+    filter: { mode: "all", days: null },
+    editingId: null,
+    historyLimit: HISTORY_PAGE,
+  };
+
+  /* ---------- DOM helpers ---------- */
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+  function el(tag, props = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (k === "class") node.className = v;
+      else if (k === "text") node.textContent = v;
+      else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v);
+    }
+    for (const c of [].concat(children)) if (c) node.append(c);
+    return node;
+  }
+
+  const dateFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const shortDateFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+
+  let toastTimer;
+  function toast(message) {
+    const t = $("#toast");
+    t.textContent = message;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+  }
+
+  /* ---------- Storage ---------- */
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (Array.isArray(data.matches)) state.matches = data.matches;
+      if (typeof data.goal === "number") state.goal = data.goal;
+    } catch (err) {
+      console.warn("Could not read saved matches:", err);
+    }
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ matches: state.matches, goal: state.goal }));
+    } catch (err) {
+      console.warn("Could not save matches:", err);
+      toast("Couldn’t save. Export a backup to keep your data.");
+    }
+  }
+
+  /* ---------- Form ---------- */
+  const form = $("#match-form");
+
+  function toLocalInputValue(date) {
+    const d = new Date(date);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function currentFormMode() {
+    return form.elements.mode.value;
+  }
+
+  function setFormMode(mode, playlist) {
+    const select = form.elements.playlist;
+    select.replaceChildren(...S.MODES[mode].playlists.map((p) => el("option", { value: p, text: p })));
+    if (playlist) select.value = playlist;
+    $$("[data-for-mode]", form).forEach((node) => { node.hidden = node.dataset.forMode !== mode; });
+  }
+
+  function updateLiveKD() {
+    const k = form.elements.kills.value;
+    const d = form.elements.deaths.value;
+    $("#live-kd").textContent = k === "" && d === "" ? "—" : S.formatKD(S.kd(k, d));
+  }
+
+  function resetForm() {
+    const keepMode = currentFormMode();
+    const keepPlaylist = form.elements.playlist.value;
+    const keepMap = form.elements.map.value;
+    form.reset();
+    form.elements.mode.value = keepMode;
+    setFormMode(keepMode, keepPlaylist);
+    // Keep playlist and map: people usually play several games in a row on the same one.
+    form.elements.map.value = keepMap;
+    form.elements.date.value = toLocalInputValue(new Date());
+    form.elements.id.value = "";
+    state.editingId = null;
+    $("#save-btn").textContent = "Save match";
+    $("#cancel-edit").hidden = true;
+    $("#form-errors").textContent = "";
+    updateLiveKD();
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    const fd = new FormData(form);
+    const raw = Object.fromEntries(fd.entries());
+    // datetime-local has no timezone; Date() reads it as local time, which is what we want.
+    if (!raw.date) raw.date = new Date().toISOString();
+
+    const { ok, errors, match } = S.validateMatch(raw);
+    if (!ok) {
+      $("#form-errors").textContent = errors.join(" ");
+      return;
+    }
+
+    if (state.editingId) {
+      state.matches = state.matches.map((m) => (m.id === state.editingId ? match : m));
+      toast("Match updated");
+    } else {
+      state.matches.push(match);
+      toast(`Match saved · KD ${S.formatKD(S.kd(match.kills, match.deaths))}`);
+    }
+    save();
+    resetForm();
+    render();
+    form.elements.kills.focus();
+  }
+
+  function startEdit(id) {
+    const m = state.matches.find((x) => x.id === id);
+    if (!m) return;
+    state.editingId = id;
+    form.elements.mode.value = m.mode;
+    setFormMode(m.mode, m.playlist);
+    form.elements.id.value = m.id;
+    form.elements.map.value = m.map || "";
+    form.elements.kills.value = m.kills;
+    form.elements.deaths.value = m.deaths;
+    form.elements.assists.value = m.assists ?? "";
+    form.elements.placement.value = m.placement ?? "";
+    form.elements.result.value = m.result ?? "";
+    form.elements.date.value = toLocalInputValue(m.date);
+    form.elements.notes.value = m.notes || "";
+    $("#save-btn").textContent = "Update match";
+    $("#cancel-edit").hidden = false;
+    updateLiveKD();
+    form.scrollIntoView({ behavior: "smooth", block: "start" });
+    form.elements.kills.focus({ preventScroll: true });
+  }
+
+  function deleteMatch(id) {
+    const m = state.matches.find((x) => x.id === id);
+    if (!m) return;
+    const label = `${S.MODES[m.mode].label} ${m.kills}/${m.deaths} on ${shortDateFmt.format(new Date(m.date))}`;
+    if (!confirm(`Delete this match?\n${label}`)) return;
+    state.matches = state.matches.filter((x) => x.id !== id);
+    if (state.editingId === id) resetForm();
+    save();
+    render();
+    toast("Match deleted");
+  }
+
+  /* ---------- Rendering ---------- */
+  function rangeMatches() {
+    return S.filterMatches(state.matches, { mode: "all", days: state.filter.days });
+  }
+
+  function viewMatches() {
+    return S.filterMatches(state.matches, state.filter);
+  }
+
+  function render() {
+    renderScoreboard();
+    renderChart();
+    renderHighlights();
+    renderHistory();
+  }
+
+  function renderScoreboard() {
+    const inRange = rangeMatches();
+    for (const mode of ["warzone", "multiplayer"]) {
+      const card = $(`[data-mode-card="${mode}"]`);
+      const sum = S.summarize(inRange.filter((m) => m.mode === mode));
+      const set = (key, value) => { $(`[data-stat="${key}"]`, card).textContent = value; };
+
+      set("kd", S.formatKD(sum.kd));
+      set("kills", sum.kills.toLocaleString());
+      set("deaths", sum.deaths.toLocaleString());
+      set("matches", sum.matches.toLocaleString());
+      set("winRate", `${Math.round(sum.winRate * 100)}%`);
+      set("last10", S.formatKD(sum.last10KD));
+
+      const last10 = $('[data-stat="last10"]', card);
+      last10.classList.toggle("trend-up", sum.matches >= 10 && sum.last10KD > sum.kd);
+      last10.classList.toggle("trend-down", sum.matches >= 10 && sum.last10KD < sum.kd);
+
+      const total = sum.kills + sum.deaths;
+      $('[data-stat="bar"]', card).style.width = total ? `${(sum.kills / total) * 100}%` : "0%";
+
+      card.classList.toggle("dimmed", state.filter.mode !== "all" && state.filter.mode !== mode);
+    }
+
+    const all = S.summarize(inRange);
+    $("#combined").textContent =
+      `Combined KD ${S.formatKD(all.kd)} across ${all.matches} ${all.matches === 1 ? "match" : "matches"}`;
+  }
+
+  function niceStep(max) {
+    const raw = max / 4;
+    const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+    const n = raw / pow;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * pow;
+  }
+
+  function renderChart() {
+    const container = $("#chart");
+    const W = Math.max(280, Math.round(container.clientWidth || 900)), H = 260;
+    const pad = { top: 16, right: 16, bottom: 30, left: 40 };
+    const matches = viewMatches();
+
+    if (matches.length < 2) {
+      container.innerHTML =
+        `<svg viewBox="0 0 ${W} ${H}" ><text class="empty-chart" x="${W / 2}" y="${H / 2}" text-anchor="middle">Log at least two matches to see your trend.</text></svg>`;
+      return;
+    }
+
+    const series = ["warzone", "multiplayer"]
+      .map((mode) => ({ mode, points: S.cumulativeKD(matches.filter((m) => m.mode === mode)) }))
+      .filter((s) => s.points.length);
+
+    const times = matches.map((m) => new Date(m.date).getTime());
+    let tMin = Math.min(...times), tMax = Math.max(...times);
+    if (tMin === tMax) { tMin -= 3600e3; tMax += 3600e3; }
+
+    const maxKD = Math.max(state.goal || 0, ...series.flatMap((s) => s.points.map((p) => p.kd)));
+    const step = niceStep(Math.max(maxKD, 0.5) * 1.1);
+    const yMax = Math.ceil((Math.max(maxKD, 0.5) * 1.1) / step) * step;
+
+    const x = (t) => pad.left + ((t - tMin) / (tMax - tMin)) * (W - pad.left - pad.right);
+    const y = (v) => H - pad.bottom - (v / yMax) * (H - pad.top - pad.bottom);
+
+    let svg = `<svg viewBox="0 0 ${W} ${H}">`;
+
+    // Grid + y labels
+    svg += `<g class="grid">`;
+    for (let v = 0; v <= yMax + 1e-9; v += step) {
+      svg += `<line x1="${pad.left}" x2="${W - pad.right}" y1="${y(v)}" y2="${y(v)}" />`;
+    }
+    svg += `</g><g class="axis">`;
+    for (let v = 0; v <= yMax + 1e-9; v += step) {
+      svg += `<text x="${pad.left - 8}" y="${y(v) + 4}" text-anchor="end">${v.toFixed(step < 1 ? 1 : 0)}</text>`;
+    }
+    // x labels: start, middle, end
+    [tMin, (tMin + tMax) / 2, tMax].forEach((t, i) => {
+      const anchor = ["start", "middle", "end"][i];
+      svg += `<text x="${x(t)}" y="${H - 8}" text-anchor="${anchor}">${shortDateFmt.format(new Date(t))}</text>`;
+    });
+    svg += `</g>`;
+
+    // Goal line
+    if (state.goal > 0) {
+      svg += `<line class="goal" x1="${pad.left}" x2="${W - pad.right}" y1="${y(state.goal)}" y2="${y(state.goal)}" stroke-width="1.5" />`;
+    }
+
+    // Series
+    for (const s of series) {
+      const cls = s.mode === "warzone" ? "line-wz" : "line-mp";
+      const d = s.points.map((p, i) => `${i ? "L" : "M"}${x(new Date(p.date).getTime()).toFixed(1)},${y(p.kd).toFixed(1)}`).join(" ");
+      svg += `<path class="${cls}" d="${d}" fill="none" stroke-width="2.5" stroke-linejoin="round" />`;
+      if (s.points.length <= 40) {
+        for (const p of s.points) {
+          svg += `<circle cx="${x(new Date(p.date).getTime())}" cy="${y(p.kd)}" r="3" class="${cls}" fill="var(--panel)" stroke-width="2"><title>${S.formatKD(p.kd)} after ${dateFmt.format(new Date(p.date))}</title></circle>`;
+        }
+      }
+    }
+
+    svg += `</svg>`;
+    container.innerHTML = svg;
+  }
+
+  function highlight(term, big, sub) {
+    return el("div", {}, [
+      el("dt", { text: term }),
+      el("dd", {}, [el("span", { class: "big", text: big }), sub ? el("div", { class: "sub", text: sub }) : null]),
+    ]);
+  }
+
+  function renderHighlights() {
+    const list = $("#highlights");
+    const matches = viewMatches();
+    if (!matches.length) {
+      list.replaceChildren(el("p", { class: "sub", text: "Highlights appear once you’ve logged a match." }));
+      return;
+    }
+    const sum = S.summarize(matches);
+    const b = sum.bestMatch;
+    const items = [];
+
+    items.push(highlight(
+      "Best game",
+      `${b.kills} kills`,
+      `${S.formatKD(S.kd(b.kills, b.deaths))} KD · ${S.MODES[b.mode].label}${b.map ? ` · ${b.map}` : ""} · ${shortDateFmt.format(new Date(b.date))}`
+    ));
+
+    items.push(highlight(
+      "Positive KD streak",
+      `${sum.positiveStreak} ${sum.positiveStreak === 1 ? "game" : "games"}`,
+      "Consecutive recent matches at 1.00 KD or better"
+    ));
+
+    items.push(highlight("Average kills", sum.avgKills.toFixed(1), `${sum.assists.toLocaleString()} assists in total`));
+
+    // Best map: highest KD among maps with 3+ matches
+    const byMap = new Map();
+    for (const m of matches) {
+      if (!m.map) continue;
+      const key = m.map.toLowerCase();
+      const entry = byMap.get(key) || { name: m.map, kills: 0, deaths: 0, count: 0 };
+      entry.kills += m.kills; entry.deaths += m.deaths; entry.count++;
+      byMap.set(key, entry);
+    }
+    const ranked = [...byMap.values()].filter((e) => e.count >= 3).sort((a, b) => S.kd(b.kills, b.deaths) - S.kd(a.kills, a.deaths));
+    if (ranked.length) {
+      const top = ranked[0];
+      items.push(highlight("Best map", top.name, `${S.formatKD(S.kd(top.kills, top.deaths))} KD over ${top.count} matches`));
+    }
+
+    if (state.goal > 0) {
+      // Kills needed with zero additional deaths to reach goal: k_needed = goal * D - K
+      const needed = Math.max(0, Math.ceil(state.goal * sum.deaths - sum.kills));
+      items.push(highlight(
+        `Goal ${S.formatKD(state.goal)} KD`,
+        needed === 0 ? "Reached" : `${needed} kills short`,
+        needed === 0 ? "You’re at or above your goal in this view" : "Kills needed without dying to reach your goal"
+      ));
+    }
+
+    list.replaceChildren(...items);
+  }
+
+  function resultLabel(m) {
+    if (m.mode === "warzone") {
+      if (!m.placement) return "—";
+      return m.placement === 1 ? "Win" : `#${m.placement}`;
+    }
+    return m.result ? m.result[0].toUpperCase() + m.result.slice(1) : "—";
+  }
+
+  function renderHistory() {
+    const body = $("#history-body");
+    const matches = S.sortByDate(viewMatches()).reverse();
+    const shown = matches.slice(0, state.historyLimit);
+
+    $("#history-count").textContent = matches.length ? `${matches.length} ${matches.length === 1 ? "match" : "matches"}` : "";
+    $("#empty-state").hidden = matches.length > 0;
+    $("#load-sample").hidden = state.matches.length > 0;
+    $(".history").hidden = matches.length === 0;
+
+    body.replaceChildren(...shown.map((m) => {
+      const k = S.kd(m.kills, m.deaths);
+      const kdCell = el("td", { class: `num kd ${k >= 1 ? "pos" : "neg"}`, text: S.formatKD(k) });
+      const tr = el("tr", {}, [
+        el("td", { text: dateFmt.format(new Date(m.date)) }),
+        el("td", {}, [el("span", { class: `mode-tag ${m.mode === "multiplayer" ? "mp" : ""}`, text: S.MODES[m.mode].label })]),
+        el("td", { text: m.playlist || "—" }),
+        el("td", { text: m.map || "—" }),
+        el("td", { class: "num", text: String(m.kills) }),
+        el("td", { class: "num", text: String(m.deaths) }),
+        el("td", { class: "num", text: String(m.assists ?? 0) }),
+        kdCell,
+        el("td", { text: resultLabel(m) }),
+        el("td", {}, [el("div", { class: "row-actions" }, [
+          el("button", { type: "button", text: "Edit", "aria-label": `Edit match from ${dateFmt.format(new Date(m.date))}`, onclick: () => startEdit(m.id) }),
+          el("button", { type: "button", text: "Delete", "aria-label": `Delete match from ${dateFmt.format(new Date(m.date))}`, onclick: () => deleteMatch(m.id) }),
+        ])]),
+      ]);
+      if (m.notes) tr.title = m.notes;
+      return tr;
+    }));
+
+    // "Show more" control
+    const panel = body.closest(".panel");
+    $(".show-more", panel)?.remove();
+    if (matches.length > shown.length) {
+      panel.append(el("button", {
+        type: "button",
+        class: "btn ghost show-more",
+        text: `Show ${Math.min(HISTORY_PAGE, matches.length - shown.length)} more`,
+        onclick: () => { state.historyLimit += HISTORY_PAGE; renderHistory(); },
+      }));
+    }
+  }
+
+  /* ---------- Import / export ---------- */
+  function download(filename, content, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = el("a", { href: url, download: filename });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function stamp() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function mergeImported(incoming) {
+    const byId = new Map(state.matches.map((m) => [m.id, m]));
+    let added = 0;
+    for (const m of incoming) {
+      if (!byId.has(m.id)) added++;
+      byId.set(m.id, m);
+    }
+    state.matches = [...byId.values()];
+    return added;
+  }
+
+  async function handleImport(file) {
+    const status = $("#import-status");
+    status.textContent = "";
+    const text = await file.text();
+    let result;
+
+    if (file.name.toLowerCase().endsWith(".json")) {
+      try {
+        const data = JSON.parse(text);
+        const list = Array.isArray(data) ? data : data.matches;
+        if (!Array.isArray(list)) throw new Error("No matches array found.");
+        const matches = [], errors = [];
+        list.forEach((raw, i) => {
+          const r = S.validateMatch(raw);
+          if (r.ok) matches.push(r.match);
+          else errors.push(`Item ${i + 1}: ${r.errors.join(" ")}`);
+        });
+        result = { matches, errors };
+        if (typeof data.goal === "number") state.goal = data.goal;
+      } catch (err) {
+        status.textContent = `Couldn’t read that JSON file: ${err.message}`;
+        return;
+      }
+    } else {
+      result = S.fromCSV(text);
+    }
+
+    const added = mergeImported(result.matches);
+    save();
+    render();
+    syncGoalInput();
+    const skipped = result.errors.length ? ` Skipped ${result.errors.length}: ${result.errors.slice(0, 3).join(" ")}${result.errors.length > 3 ? " …" : ""}` : "";
+    status.textContent = `Imported ${result.matches.length} matches (${added} new).${skipped}`;
+  }
+
+  /* ---------- Sample data ---------- */
+  function sampleMatches() {
+    const out = [];
+    const now = Date.now();
+    const wzMaps = ["Verdansk", "Rebirth Island", "Area 99"];
+    const mpMaps = ["Nuketown", "Rust", "Terminal", "Shipment", "Highrise"];
+    let seed = 7;
+    const rand = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+    for (let i = 0; i < 48; i++) {
+      const mode = rand() < 0.45 ? "warzone" : "multiplayer";
+      const date = new Date(now - (48 - i) * 14.5 * 3600e3 - rand() * 3600e3);
+      const growth = i / 48 * 0.35; // gets a little better over time
+      const base = {
+        mode,
+        date: date.toISOString(),
+        playlist: S.MODES[mode].playlists[Math.floor(rand() * (mode === "warzone" ? 5 : 6))],
+        map: (mode === "warzone" ? wzMaps : mpMaps)[Math.floor(rand() * (mode === "warzone" ? 3 : 5))],
+        notes: "",
+      };
+      if (mode === "warzone") {
+        base.kills = Math.floor(rand() * 9 * (1 + growth));
+        base.deaths = 1 + Math.floor(rand() * 4);
+        base.assists = Math.floor(rand() * 4);
+        base.placement = rand() < 0.08 ? 1 : 2 + Math.floor(rand() * 40);
+      } else {
+        base.kills = 8 + Math.floor(rand() * 22 * (1 + growth));
+        base.deaths = 10 + Math.floor(rand() * 18);
+        base.assists = Math.floor(rand() * 8);
+        base.result = rand() < 0.5 + growth / 2 ? "win" : "loss";
+      }
+      out.push(S.validateMatch(base).match);
+    }
+    return out;
+  }
+
+  /* ---------- Goal ---------- */
+  function syncGoalInput() {
+    $("#goal").value = state.goal ? state.goal.toFixed(2) : "";
+  }
+
+  /* ---------- Events ---------- */
+  function bind() {
+    // Mode filter
+    $$(".segmented button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.filter.mode = btn.dataset.mode;
+        state.historyLimit = HISTORY_PAGE;
+        $$(".segmented button").forEach((b) => b.setAttribute("aria-checked", String(b === btn)));
+        // Pre-select this mode in the form too, when not editing
+        if (btn.dataset.mode !== "all" && !state.editingId) {
+          form.elements.mode.value = btn.dataset.mode;
+          setFormMode(btn.dataset.mode);
+        }
+        render();
+      });
+    });
+
+    $("#range").addEventListener("change", (e) => {
+      state.filter.days = e.target.value ? Number(e.target.value) : null;
+      state.historyLimit = HISTORY_PAGE;
+      render();
+    });
+
+    $("#goal").addEventListener("change", (e) => {
+      const v = Number(e.target.value);
+      state.goal = Number.isFinite(v) && v >= 0 ? Math.min(v, 20) : 0;
+      save();
+      syncGoalInput();
+      render();
+    });
+
+    $$('input[name="mode"]', form).forEach((r) => r.addEventListener("change", () => setFormMode(r.value)));
+    form.elements.kills.addEventListener("input", updateLiveKD);
+    form.elements.deaths.addEventListener("input", updateLiveKD);
+    form.addEventListener("submit", handleSubmit);
+    $("#cancel-edit").addEventListener("click", resetForm);
+
+    $("#export-csv").addEventListener("click", () => {
+      if (!state.matches.length) return toast("Nothing to export yet");
+      download(`kd-tracker-${stamp()}.csv`, S.toCSV(state.matches), "text/csv");
+    });
+
+    $("#export-json").addEventListener("click", () => {
+      if (!state.matches.length) return toast("Nothing to export yet");
+      download(`kd-tracker-${stamp()}.json`, JSON.stringify({ version: 1, goal: state.goal, matches: state.matches }, null, 2), "application/json");
+    });
+
+    $("#import-file").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (file) handleImport(file);
+      e.target.value = "";
+    });
+
+    $("#clear-all").addEventListener("click", () => {
+      if (!state.matches.length) return toast("No matches to delete");
+      if (!confirm(`Delete all ${state.matches.length} matches? Export a backup first if you want to keep them.`)) return;
+      state.matches = [];
+      save();
+      resetForm();
+      render();
+      toast("All matches deleted");
+    });
+
+    let resizeTimer;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(renderChart, 150);
+    });
+
+    $("#load-sample").addEventListener("click", () => {
+      state.matches = sampleMatches();
+      save();
+      render();
+      toast("Sample matches loaded. Delete them anytime under Your data.");
+    });
+  }
+
+  /* ---------- Init ---------- */
+  load();
+  setFormMode("warzone");
+  form.elements.date.value = toLocalInputValue(new Date());
+  syncGoalInput();
+  bind();
+  render();
+})();
+
+</script>
+</body>
+</html>
